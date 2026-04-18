@@ -1,0 +1,76 @@
+<?php
+$folder = 'queue';
+$configFile = $folder . '/report_settings.json';
+$admin_password = "00"; // Change this!
+
+// Settings Logic
+$settings = ['subject'=>'', 'year_section'=>'', 'day_date'=>date('Y-m-d'), 'max_grade'=>100, 'min_grade'=>80, 'total_pcs'=>40];
+if (file_exists($configFile)) $settings = array_merge($settings, json_decode(file_get_contents($configFile), true));
+
+// AJAX check for refresh
+if (isset($_GET['check_update'])) {
+    $files = glob($folder . '/*.txt');
+    echo count($files) . '_' . (file_exists($folder) ? filemtime($folder) : '');
+    exit;
+}
+
+$files = glob($folder . '/*.txt');
+if (!empty($files)) array_multisort(array_map('filectime', $files), SORT_ASC, $files);
+$totalStudents = count($files);
+
+function calculateGrade($pos, $total, $max, $min) {
+    if ($total <= 1) return $max;
+    $deduction = ($max - $min) * (($pos - 1) / ($total - 1));
+    return round($max - $deduction, 2);
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="admin-panel no-print">
+        <h2>🛡️ Teacher Control Panel</h2>
+        <form action="teacher.php" method="POST">
+            <div class="settings-grid">
+                <input type="text" name="subject" id="csv_subj" value="<?= $settings['subject'] ?>" placeholder="Subject">
+                <input type="text" name="year_section" id="csv_sect" value="<?= $settings['year_section'] ?>" placeholder="Section">
+                <input type="date" name="day_date" id="csv_date" value="<?= $settings['day_date'] ?>">
+                <input type="number" name="total_pcs" value="<?= $settings['total_pcs'] ?>">
+                <input type="password" name="admin_pass" placeholder="Password" required>
+                <button type="submit" name="update_settings" class="btn btn-success">Update</button>
+            </div>
+        </form>
+        
+        <div style="margin-top: 20px;">
+            <button onclick="downloadCSV()" class="btn btn-primary">📥 Export CSV</button>
+            <button onclick="window.print()" class="btn btn-primary">🖨️ Print</button>
+        </div>
+    </div>
+
+    <table id="mainTable" style="width:100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+            <tr style="background:#333; color:white;">
+                <th>Q#</th><th>PC</th><th>Name</th><th>Grade</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php $p=1; foreach($files as $f): $d=explode('|', file_get_contents($f)); ?>
+            <tr>
+                <td><?= $p ?></td>
+                <td>#<?= $d[0] ?></td>
+                <td><?= htmlspecialchars($d[2].", ".$d[3]) ?></td>
+                <td><?= calculateGrade($p, $totalStudents, $settings['max_grade'], $settings['min_grade']) ?></td>
+            </tr>
+            <?php $p++; endforeach; ?>
+        </tbody>
+    </table>
+
+    <script src="script.js"></script>
+    <script>
+        initAutoRefresh('teacher.php', '<?= $totalStudents . "_" . (file_exists($folder) ? filemtime($folder) : "") ?>');
+    </script>
+</body>
+</html>

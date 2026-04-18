@@ -1,0 +1,78 @@
+<?php
+$folder = 'queue';
+if (!is_dir($folder)) mkdir($folder, 0777, true);
+
+// --- 1. AUTO-REFRESH CHECKER ---
+if (isset($_GET['check_update'])) {
+    $files = glob($folder . '/*.txt');
+    echo count($files) . '_' . (file_exists($folder) ? filemtime($folder) : '');
+    exit;
+}
+
+// Load Settings
+$configFile = $folder . '/report_settings.json';
+$settings = ['total_pcs' => 40];
+if (file_exists($configFile)) {
+    $settings = array_merge($settings, json_decode(file_get_contents($configFile), true));
+}
+
+// Handle Registration
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userInput'])) {
+    $pc = preg_replace('/[^0-9]/', '', $_POST['userInput']);
+    $files = glob($folder . '/*.txt');
+    if (count($files) < $settings['total_pcs'] && !file_exists($folder.'/'.$pc.'.txt')) {
+        $data = $pc . '|checking|' . trim($_POST['lastName']) . '|' . trim($_POST['firstName']);
+        file_put_contents($folder.'/'.$pc.'.txt', $data);
+        touch($folder); // Update folder mtime for refresh logic
+    }
+    if (isset($_POST['ajax'])) exit("SUCCESS");
+    header("Location: " . $_SERVER['PHP_SELF']); exit;
+}
+
+$files = glob($folder . '/*.txt');
+if (!empty($files)) { 
+    array_multisort(array_map('filectime', $files), SORT_ASC, $files); 
+}
+$totalStudents = count($files);
+$isFull = ($totalStudents >= $settings['total_pcs']);
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Queue</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h2>🖥️ Lab PC Queue</h2>
+
+    <?php if ($isFull): ?>
+        <div class="full-warning">⚠️ Lab is currently at full capacity.</div>
+    <?php endif; ?>
+
+    <div class="capacity-info">
+        Available Slots: <strong><?= $settings['total_pcs'] - $totalStudents; ?> / <?= $settings['total_pcs']; ?></strong>
+    </div>
+
+    <form id="queueForm" method="post">
+        <input type="number" name="userInput" placeholder="PC #" class="input-box" style="width:80px" required <?= $isFull ? 'disabled' : ''; ?>>
+        <input type="text" name="lastName" placeholder="Last Name" class="input-box" required <?= $isFull ? 'disabled' : ''; ?>>
+        <input type="text" name="firstName" placeholder="First Name" class="input-box" required <?= $isFull ? 'disabled' : ''; ?>>
+        <button type="submit" class="btn btn-primary" <?= $isFull ? 'disabled' : ''; ?>>Join Queue</button>
+    </form>
+
+    <ul id="historyList">
+        <?php foreach($files as $f): $d = explode('|', file_get_contents($f)); ?>
+            <li class="card">
+                <b>PC #<?= htmlspecialchars($d[0]); ?></b>
+                <small><?= htmlspecialchars($d[2]); ?></small>
+            </li>
+        <?php endforeach; ?>
+    </ul>
+
+    <script src="script.js"></script>
+    <script>
+        initAutoRefresh('student.php', '<?= $totalStudents . "_" . (file_exists($folder) ? filemtime($folder) : "") ?>');
+        handleAjaxForm('queueForm');
+    </script>
+</body>
+</html>
